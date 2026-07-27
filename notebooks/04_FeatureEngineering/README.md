@@ -4,6 +4,8 @@
 
 This folder contains the transformations used to create the modeling dataset. The workflow is divided into two phases: feature refinement (Creation, Selection, Reduction) and baseline performance assessment.
 
+*Note: While initial exploratory feature engineering tested a localized PCA block for the LA family, our final modeling pipeline transitions to a unified global preprocessing and tuning approach (as seen in the modeling module).*
+
 ## Pipeline Summary
 
 1. `01_feature_engineering.ipynb`:
