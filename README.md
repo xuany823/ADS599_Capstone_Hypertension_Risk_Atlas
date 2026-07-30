@@ -61,7 +61,41 @@ All four sources are public, free, and joined on the 5-digit county FIPS / GEOID
 - **Geography:** prevalence visibly clusters by region, supporting the project's core hypothesis and motivating residual checks for geographic bias.
 
 ---
+## Feature Engineering
 
+<!-- TODO: replace the bracketed items with what was actually implemented -->
+
+- **USDA redundancy resolution** — the documented `la*`/`Tract*` collinearity (77 of 78 columns at VIF > 10) resolved via [feature selection / PCA — state which, and how many columns remain].
+- **Derived features** — [e.g. vehicle-access rate, food-desert density, composite socioeconomic index]. Rate-based features replace raw counts so that county population size does not dominate.
+- **Imputation** — tiered policy from the validation EDAs applied to columns with residual missingness. Rows missing the target (BPHIGH) are dropped, never imputed.
+- **Fit discipline** — all transformations (imputers, scalers, PCA, encoders) are fitted on the training split only and applied to the test split, preventing leakage through preprocessing.
+- **Output** — final feature matrix of [n] features across 2,956 counties, written to `data/final/`.
+
+---
+
+## Modeling & Results
+
+Supervised regression on the 2,956 counties with an observed target. Six model families were compared under cross-validation — a Linear Regression baseline (supported by the roughly linear DIABETES–BPHIGH relationship), two regularized linear models, an SVR, and two tree-based ensembles. Reported R² is the mean across folds with its standard deviation; RMSE and MAE are in percentage points of prevalence.
+
+| Model | R² (mean) | R² (sd) | RMSE | MAE | Fit time (s) |
+|-------|-----------|---------|------|-----|--------------|
+| **XGBoost** | **0.9166** | 0.0083 | **1.3489** | 1.0381 | 0.4922 |
+| SVR (RBF) | 0.9138 | 0.0128 | 1.3726 | **1.0206** | 0.1435 |
+| Random Forest | 0.9029 | 0.0122 | 1.4540 | 1.1158 | 3.6277 |
+| ElasticNet | 0.9005 | 0.0094 | 1.4743 | 1.1569 | 0.0539 |
+| Ridge | 0.9001 | 0.0091 | 1.4772 | 1.1571 | 0.0556 |
+| Linear Regression (baseline) | 0.9001 | 0.0091 | 1.4772 | 1.1571 | 0.0573 |
+
+**Selected model: XGBoost.** Best R² and RMSE of the six, the tightest fold-to-fold variance (sd = 0.0083), and fast to fit. It gives up direct coefficient interpretability relative to the linear models, but SHAP recovers per-county attribution, which is the project's interpretability requirement.
+
+Two honest caveats on the comparison:
+
+- **The margin over the linear baseline is small.** XGBoost improves R² by 0.0165 and RMSE by 0.13 percentage points over plain Linear Regression — real, but modest against the ~0.009 fold sd. Most of the signal is linearly accessible, consistent with the strong linear correlations found in the EDA. SVR (RBF) is within one standard deviation of XGBoost and posts the lowest MAE, so XGBoost's lead is on squared error, not across the board.
+- **Ridge and Linear Regression are identical to four decimals**, which indicates the selected Ridge penalty is effectively zero — worth confirming the alpha grid searched a wide enough range rather than reporting it as a genuine tie.
+
+**Residual analysis:** residuals examined by region to test for the geographic bias suggested by the spatial clustering in the EDA. Residuals are centered near zero with no strong systematic pattern, so no major geographic bias was detected; the remaining larger errors at the low and high ends are disclosed as a model limitation and should be monitored in regional use.
+
+---
 ## Planned Methodology
 
 1. **Data acquisition** — Programmatic ingestion from the primary sources via R scripts (`pipeline/R_src/`) that retrieve raw data through API calls and downloads, with logging of source versions and retrieval dates. CHR&R uses a pinned annual release for reproducibility.
@@ -75,10 +109,10 @@ All four sources are public, free, and joined on the 5-digit county FIPS / GEOID
 
 ---
 
-## Planned Repository Structure
+## Repository Structure
 
 ```
-Hypertension-Risk-Atlas/
+ADS599_Capstone_Hypertension_Risk_Atlas/
 ├── data/
 │   ├── figures/         # exploratory analysis figures (not version-controlled if large)
 │   ├── final/           # final analytic dataset (cleaned, merged, and feature-engineered)
@@ -86,23 +120,24 @@ Hypertension-Risk-Atlas/
 │   ├── raw/             # source files (not version-controlled if large)
 │   └── validation/      # validation datasets (raw source datasets with validation checks)
 ├── notebooks/
-│   ├── DataIngestion/   # .qmd files that ingest data from CDC, USDA, Census, and CHR&R
-│   ├── EDA/             # .ipynb notebooks for exploratory data analysis (eda_master.ipynb active)
-│   └── validation/      # .ipynb notebooks for validation of raw source datasets
+│   ├── 01_DataIngestion/       # Quarto notebooks for source-data ingestion
+│   ├── 02_validation/          # source-specific validation notebooks
+│   ├── 03_EDA/                 # exploratory analysis notebooks and figures
+│   ├── 04_FeatureEngineering/  # feature engineering, selection, PCA, and baseline modeling
+│   └── 05_Modeling/            # modeling pipeline notebook and model figures
 ├── pipeline/
-│   ├── DataIngestion/   # Python cleaning & merge scripts (01_process_cdc.py, 02_process_usda.py, 03_process_census.py, 07_run_ingestion.py)
-│   ├── R_src/           # R scripts to retrieve raw data via API calls and downloads
-│   └── modeling/        # model training & evaluation
+│   ├── 01_R_src/                    # R scripts that retrieve raw source data
+│   ├── 02_DataIngestion/            # Python cleaning, merge, database, and orchestration scripts
+│   ├── 03_FeatureEngineering/       # feature engineering and train/test split pipeline
+│   ├── 04_generate_eda_report.py
+│   └── 05_generate_modeling_report.py
+├── .github/workflows/pipeline.yml   # CI workflow
+├── .gitattributes
 ├── .gitignore
-├── ADS599_Project.Rproj  # RStudio project file
-├── audit_data            # checks for data integrity and completeness
-├── hypertension_atlas.db # SQLite database of merged datasets
-├── LICENSE
+├── audit_data.py         # checks for data integrity and completeness
 ├── main.py               # main script to run the entire pipeline
 ├── paths.py              # filepaths for data ingestion and modeling
 ├── README.md
-├── references.bib        # bibliography for literature review
-├── renv.lock             # R dependencies
 ├── requirements.txt      # Python dependencies
 └── utils.py              # utility functions for data ingestion and modeling
 ```
